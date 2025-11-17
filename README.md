@@ -11,16 +11,12 @@ The device includes a built-in WiFi setup mode accessible through a push button.
 * **Two operating modes**
   * **Setup Mode:** Access point + web configuration (SSID, password, device ID)
   * **Normal Mode:** Sensor reading, LCD status, buzzer alarm, API reporting
-
 * **Real-time air-quality evaluation**
   * Green = Good
   * Yellow = Moderate
   * Red = Bad (buzzer alarm)
-
 * **Periodic data upload** to an online backend
-
 * **User feedback** via LCD and buzzer
-
 * **WiFi-enabled** using Arduino WiFi Rev2
 
 ## 🧰 Components Used
@@ -59,18 +55,13 @@ The device includes a built-in WiFi setup mode accessible through a push button.
 To enter setup mode:
 
 1. Hold the Button while powering on the device.
-
 2. The device starts as a WiFi Access Point.
-
 3. Connect to the device’s AP from a phone or laptop.
-
 4. Open the configuration webpage provided by the device.
-
 5. Set:
    * WiFi SSID
    * WiFi password
    * Device ID (required by backend API)
-
 6. Save settings — A reboot is required for the changes to take effect.
 
 ### 2. Normal Sensing Mode
@@ -78,15 +69,9 @@ To enter setup mode:
 If the button is not held during startup:
 
 * Reads air-quality values from the sensor.
-
 * Displays air-quality and status on the RGB LCD:
-
 * Green = Good
-
 * Yellow = Moderate (also activates buzzer)
-
 * Red = Bad (also activates buzzer)
-
 * Periodically sends sensor readings + device ID to the backend API.
-
 * Continues looping indefinitely.
