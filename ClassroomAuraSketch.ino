@@ -1,6 +1,7 @@
 #include "src/Config.h"
 #include "src/Hardware/Display.h"
 #include "src/Hardware/Button.h"
+#include "src/Hardware/Alarm.h"
 #include "src/Hardware/AirQualitySensor.h"
 #include "src/FSM/FiniteStateMachine.h"
 #include "src/States/Boot/BootState.h"
@@ -19,6 +20,7 @@ void setup() {
   
   display.begin();
   button.begin();
+  alarm.begin();
   airQualitySensor.begin();
 
   bootState.setNextStates(&setupState, &runState);
@@ -28,5 +30,7 @@ void setup() {
 void loop() {
   display.update();
   button.update();
+  alarm.update();
+  airQualitySensor.update();
   fsm.update();
 }

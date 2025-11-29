@@ -4,19 +4,15 @@
 
 #include "../../Hardware/Display.h"
 #include "../../Hardware/AirQualitySensor.h"
-#include <ArduinoHttpClient.h>
+#include "../../Hardware/Alarm.h"
 
-// Backend server URL
-const char* RunState::BACKEND_URL = "our-backend.com";
-
-RunState::RunState() : State() {}
+RunState::RunState() 
+: airQualitySender(wifiClient),
+  State()
+{}
 
 void RunState::enter() {
   Serial.println("RunState: Enter");
-
-  // Initialize buzzer pin
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
   
   display.clear();
   display.setBg(Display::Color::Dim);
@@ -97,10 +93,10 @@ void RunState::onConnectingToWiFiUpdate() {
   long time = millis();
   char buffer[] = "Retrying       ";
 
-  if(time - 3000 >= lastWiFiUpdateTime) {
+  if(time - 4000 >= lastWiFiUpdateTime) {
     lastWiFiUpdateTime = time;
 
-    if(wiFiConnectionAttempt > 3)
+    if(wiFiConnectionAttempt > 6)
     {
       Serial.println("Failed to connect to WiFi.");
       subState = SubState::Failed;
@@ -113,14 +109,14 @@ void RunState::onConnectingToWiFiUpdate() {
       Serial.println(config.data.ssid);
       Serial.println(config.data.password);
 
-      for(int i = 0; i < wiFiConnectionAttempt; i++) {
+      for(int i = 0; i < wiFiConnectionAttempt/2; i++) {
         buffer[8+i] = '.';
       }
       display.setText(1, buffer);
       
       if(strlen(config.data.ssid) < 1) {
-      Serial.println("Failed to connect to WiFi. Invalid SSID.");
-      subState = SubState::Failed;
+        Serial.println("Failed to connect to WiFi. Invalid SSID.");
+        subState = SubState::Failed;
         return;  
       }
 
@@ -139,34 +135,64 @@ void RunState::onRunEnter() {
   display.clear();
   display.setBg(Display::Color::Dim);
   lastTickTime = 0;
-  lastSendTime = 0;
+  lastAirQualityReading = -1;
+
+  Serial.print("::: Device id: ");
+  Serial.println(config.data.deviceId);
+  
+  airQualitySender.begin(
+    config.data.deviceId,
+    "airQuality"
+  );
 }
 
 void RunState::onRunUpdate() {
   long time = millis();
   if(time - TICK_RATE >= lastTickTime) {
-    lastTickTime = time;
-
+    
     int airQuality = airQualitySensor.get();
-
-    // Update screen color based on air quality thresholds
-    
-    // 0-150 = Good, 151-200 = Moderate, 201+ = Bad
-    
-    if (airQuality <= 150) {
-      display.setBg(Display::Color::Default);  // Good - White
-    } else if (airQuality <= 200) {
-      display.setBg(Display::Color::Warning);  // Moderate - Orange
-    } else {
-      display.setBg(Display::Color::Error);    // Bad - Red
+    if(airQuality < 0) {
+      // This means that there is not enough readings..
+      display.setText(0, "Air Quality");
+      display.setText(0, "...");
+      return;
     }
     
-    checkSituationChange(airQuality);
-    
-    // Send data to backend every 30 seconds 
-    if (time - lastSendTime >= SEND_INTERVAL) {
-        sendToBackend(airQuality);
-        lastSendTime = time;
+    lastTickTime = time;
+
+    int wifiStatus = WiFi.status();
+    if(wifiStatus != WL_CONNECTED) {
+      Serial.println("WiFi connection lost!");
+      subState = SubState::Failed;
+      alarm.on(1000, 0);
+      return;
+    }
+
+    airQualitySender.update(airQuality);
+
+    if(airQuality == lastAirQualityReading)
+      return;
+
+    lastAirQualityReading = airQuality;
+
+    if (airQuality <= 50) {             // Good
+      alarm.off();
+      display.setBg(0, 228, 0);           
+    } else if (airQuality <= 100) {     // Moderate
+      alarm.off();
+      display.setBg(100, 225, 0);        
+    } else if (airQuality <= 150) {     // Unhealthy for Sensitive Groups
+      alarm.on(50, 10000);
+      display.setBg(200, 50, 0);         
+    } else if (airQuality <= 200) {     // Unhealthy
+      alarm.on(300, 300);
+      display.setBg(255, 0, 0);           
+    } else if (airQuality <= 300) {     // Very Unhealthy
+      alarm.on(200, 200);
+      display.setBg(150, 0, 100);         
+    } else {                            // Hazardous
+      alarm.on(100, 100);
+      display.setBg(200, 0, 55);          
     }
 
     // Update display 
@@ -175,79 +201,4 @@ void RunState::onRunUpdate() {
     snprintf(buffer, sizeof(buffer), "%d", airQuality);
     display.setText(1, buffer);
   }
-}
-
-// Check if air quality situation has changed and trigger buzzer
-// -1 = unknown, 0 = good, 1 = moderate, 2 = bad
-void RunState::checkSituationChange(int airQuality) {
-
-  int currentState;
-    if (airQuality <= 150) {
-        currentState = 0; // Good (0-150)
-    } else if (airQuality <= 200) {
-        currentState = 1; // Moderate (151-200)
-    } else {
-        currentState = 2; // Bad (201+)
-    }
-    
-    // Check if state changed from previous reading
-    if (currentState != lastAirQualityState) {
-        playSituationChangeSound(currentState);
-        lastAirQualityState = currentState;
-        
-        Serial.print("Situation changed: ");
-        Serial.print(airQuality);
-        Serial.print(" -> ");
-        Serial.println(currentState == 0 ? "GOOD" : currentState == 1 ? "MODERATE" : "BAD");
-    }
-}
-
-// Play different buzzer sounds based on air quality situation
-// 0 = good, 1 = moderate, 2 = bad
-void RunState::playSituationChangeSound(int newState) {
-    switch(newState) {
-        case 0: // Good (0-150) - High pitched short beep
-            tone(BUZZER_PIN, 1500, 200);
-            Serial.println("Air Quality: GOOD");
-            break;
-        case 1: // Moderate (151-200) - Medium pitched beep
-            tone(BUZZER_PIN, 1000, 400);
-            Serial.println("Air Quality: MODERATE");
-            break;
-        case 2: // Bad (201+) - Low pitched long beep
-            tone(BUZZER_PIN, 600, 800);
-            Serial.println("Air Quality: BAD");
-            break;
-    }
-}
-
-// Send air quality data to backend server by HTTP POST
-void RunState::sendToBackend(int airQuality) {
-
-  if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Cannot send: WiFi not connected");
-        return;
-    }
-    
-    // Create HTTP client for backend communication
-    HttpClient client = HttpClient(wifiClient, BACKEND_URL, BACKEND_PORT);
-    
-    String contentType = "application/json";
-    String postData = "{";
-    postData += "\"deviceId\":\"" + String(config.data.deviceId) + "\",";
-    postData += "\"airQuality\":" + String(airQuality) + ",";
-    postData += "\"timestamp\":" + String(millis());
-    postData += "}";
-    
-    Serial.println("Sending to backend: " + postData);
-    
-    client.post("/api/sensor-data", contentType, postData);
-    
-    // Read and log from backend
-    int statusCode = client.responseStatusCode();
-    String response = client.responseBody();
-    
-    Serial.print("Backend response: ");
-    Serial.print(statusCode);
-    Serial.println(" - " + response);
 }

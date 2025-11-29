@@ -3,6 +3,7 @@
 
 #include "../../FSM/State.h"
 #include "../../Config.h"
+#include "SensorSender.h"
 #include <WiFiNINA.h>
 
 class RunState : public State {
@@ -26,18 +27,12 @@ class RunState : public State {
     long lastWiFiUpdateTime;
 
     long lastTickTime;
+    int lastAirQualityReading;
+
+    WiFiClient wifiClient;
+    SensorSender airQualitySender;
 
     bool finished = false;
-
-    //Buzzer functionality
-    static constexpr uint8_t BUZZER_PIN = 5;
-    int lastAirQualityState = -1; // -1 = unknown, 0 = good, 1 = moderate, 2 = bad
-    
-    static const char* BACKEND_URL;
-    static const int BACKEND_PORT = 80;
-    WiFiClient wifiClient;
-    long lastSendTime = 0;
-    static const long SEND_INTERVAL = 30000; // Send data every 30 seconds
 
     void onSubStateChanged();
     void onFailedEnter();
@@ -45,10 +40,6 @@ class RunState : public State {
     void onConnectingToWiFiUpdate();
     void onRunEnter();
     void onRunUpdate();
-
-    void checkSituationChange(int airQuality);
-    void playSituationChangeSound(int newState);
-    void sendToBackend(int airQuality);
 
   public:
     RunState();
